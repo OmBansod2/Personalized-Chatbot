@@ -1,0 +1,9 @@
+Flask
+Flask-SQLAlchemy
+sentence-transformers
+torch
+transformers
+scipy
+numpy
+pymysql
+cryptography

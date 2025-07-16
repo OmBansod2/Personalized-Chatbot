@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Admin Panel - FAQ Manager</title>
+  <!-- Bootstrap CSS -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
+  <!-- DataTables CSS -->
+  <link rel="stylesheet" href="https://cdn.datatables.net/1.13.4/css/jquery.dataTables.min.css">
+  <style>
+    body {
+      background-color: #f8f9fa;
+    }
+  </style>
+</head>
+<body class="bg-light">
+  <div class="container mt-5">
+    <!-- Header with Logout Button -->
+    <div class="d-flex justify-content-between align-items-center">
+      <h2 class="mb-4">Admin Panel - FAQ Manager</h2>
+      <a href="/logout" class="btn btn-danger">Logout</a>
+    </div>
+    
+    <!-- Add/Edit Form -->
+    <div class="card mb-4">
+      <div class="card-header">Add / Edit FAQ</div>
+      <div class="card-body">
+        <form id="faq-form">
+          <input type="hidden" id="faq-id">
+          <div class="mb-3">
+            <label class="form-label">Question</label>
+            <input type="text" class="form-control" id="question" required>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Answer</label>
+            <textarea class="form-control" id="answer" rows="3" required></textarea>
+          </div>
+          <div class="form-check mb-3">
+            <input class="form-check-input" type="checkbox" id="is_enabled" checked>
+            <label class="form-check-label">Enabled</label>
+          </div>
+          <button type="submit" class="btn btn-primary">Save FAQ</button>
+          <button type="button" class="btn btn-secondary" onclick="resetForm()">Cancel</button>
+        </form>
+      </div>
+    </div>
+
+    <!-- FAQ List (DataTable) -->
+    <div class="card">
+      <div class="card-header">FAQ List</div>
+      <div class="card-body">
+        <table class="table table-bordered table-hover" id="faq-table" style="width:100%">
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Question</th>
+              <th>Status</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            <!-- DataTables will inject data here -->
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Notification Modal (will be shown only for errors) -->
+  <div class="modal fade" id="messageModal" tabindex="-1" aria-labelledby="messageModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title" id="messageModalLabel">Notification</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body" id="messageModalBody">
+          <!-- Notification message will be injected here -->
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-primary" data-bs-dismiss="modal">OK</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Confirmation Modal with Cancel option -->
+  <div class="modal fade" id="confirmModal" tabindex="-1" aria-labelledby="confirmModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title" id="confirmModalLabel">Confirmation</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body" id="confirmModalBody">
+          <!-- Confirmation message goes here -->
+        </div>
+        <div class="modal-footer">
+          <button type="button" id="confirmCancelBtn" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="button" id="confirmOkBtn" class="btn btn-primary">Confirm</button>
+        </div>
+      </div>
+    </div>
+  </div>
+  
+  <!-- jQuery (required for DataTables) -->
+  <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+  <!-- DataTables JS -->
+  <script src="https://cdn.datatables.net/1.13.4/js/jquery.dataTables.min.js"></script>
+  <!-- Bootstrap Bundle JS (includes Popper) -->
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+
+  <script>
+    const API = '/admin';
+    let allFAQs = [];
+    let dataTable;
+
+    // Function to show a notification message using the message modal.
+    // This will only be called for errors.
+    function showMessage(message, type) {
+      let title;
+      switch (type) {
+        case "error":
+        case "danger": title = "Error"; break;
+        default: title = "Notification";
+      }
+      document.getElementById("messageModalLabel").textContent = title;
+      document.getElementById("messageModalBody").textContent = message;
+      const messageModal = new bootstrap.Modal(document.getElementById("messageModal"), { keyboard: true });
+      messageModal.show();
+    }
+
+    // Function that returns a Promise that resolves to true if the user confirms the operation.
+    function showConfirm(message) {
+      return new Promise((resolve) => {
+        document.getElementById("confirmModalBody").textContent = message;
+        const confirmModalEl = document.getElementById("confirmModal");
+        const confirmModal = new bootstrap.Modal(confirmModalEl, { keyboard: true });
+        
+        // Remove previous event listeners to avoid duplicate handlers.
+        const confirmOkBtn = document.getElementById("confirmOkBtn");
+        const confirmCancelBtn = document.getElementById("confirmCancelBtn");
+        confirmOkBtn.replaceWith(confirmOkBtn.cloneNode(true));
+        confirmCancelBtn.replaceWith(confirmCancelBtn.cloneNode(true));
+        
+        // Re-select buttons after replacing them.
+        const okBtn = document.getElementById("confirmOkBtn");
+        const cancelBtn = document.getElementById("confirmCancelBtn");
+
+        okBtn.addEventListener("click", function() {
+          resolve(true);
+          confirmModal.hide();
+        }, { once: true });
+        
+        cancelBtn.addEventListener("click", function() {
+          resolve(false);
+        }, { once: true });
+        
+        confirmModal.show();
+      });
+    }
+
+    // Fetch FAQs from the backend and initialize/reinitialize the DataTable.
+    async function fetchFAQs() {
+      try {
+        const res = await fetch(`${API}/list`);
+        allFAQs = await res.json(); // expecting an array of FAQ objects
+        initDataTable(allFAQs);
+        $('#faq-table').on('click', '.edit-btn', function () {
+          const id = $(this).data('id');
+          const question = decodeURIComponent($(this).data('question'));
+          const answer = decodeURIComponent($(this).data('answer'));
+          const is_enabled = $(this).data('enabled') === true || $(this).data('enabled') === 'true';
+          editFAQ({ id, question, answer, is_enabled });
+        });
+      } catch (error) {
+        console.error('Error fetching FAQs:', error);
+        showMessage("Failed to fetch FAQs.", "error");
+      }
+    }
+
+    // Initialize or reinitialize the DataTable with fetched FAQ data.
+    function initDataTable(data) {
+      if ($.fn.DataTable.isDataTable('#faq-table')) {
+        $('#faq-table').DataTable().clear().destroy();
+      }
+      dataTable = $('#faq-table').DataTable({
+        data: data,
+        columns: [
+          { data: 'id', visible: false },  // Hide the ID column while keeping its data
+          { data: 'question' },
+          { 
+            data: 'is_enabled',
+            render: function(data) {
+              return `<span class="badge ${data ? 'bg-success' : 'bg-secondary'}">${data ? 'Enabled' : 'Disabled'}</span>`;
+            }
+          },
+          { 
+            data: null,
+            orderable: false,
+            render: function(row) {
+              return `
+                <button class="btn btn-sm btn-warning edit-btn"
+                        data-id="${row.id}"
+                        data-question="${encodeURIComponent(row.question)}"
+                        data-answer="${encodeURIComponent(row.answer)}"
+                        data-enabled="${row.is_enabled}">
+                  Edit
+                </button>
+                <button class="btn btn-sm btn-danger" onclick="confirmDeleteFAQ(${row.id})">Delete</button>
+                <button class="btn btn-sm btn-info" onclick="confirmToggleFAQ(${row.id})">Toggle</button>
+              `;
+            }
+          }
+        ],
+        responsive: true,
+        language: { search: "Filter records:" }
+      });
+    }
+
+    // Handle Add/Edit FAQ form submission.
+    document.getElementById('faq-form').addEventListener('submit', async function (e) {
+      e.preventDefault();
+      const id = document.getElementById('faq-id').value;
+      const question = document.getElementById('question').value;
+      const answer = document.getElementById('answer').value;
+      const is_enabled = document.getElementById('is_enabled').checked;
+      const payload = { question, answer, is_enabled };
+      let res, result;
+
+      if (id) {
+        res = await fetch(`${API}/edit/${id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+      } else {
+        res = await fetch(`${API}/add`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+      }
+      result = await res.json();
+      if (!res.ok) {
+        showMessage(result.error || "An error occurred.", "error");
+      }
+      resetForm();
+      fetchFAQs();
+    });
+
+    // Fill the form fields for editing an FAQ.
+    function editFAQ(faq) {
+      document.getElementById('faq-id').value = faq.id;
+      document.getElementById('question').value = faq.question;
+      document.getElementById('answer').value = faq.answer;
+      document.getElementById('is_enabled').checked = faq.is_enabled;
+    }
+
+    // Use the confirmation modal for deletion.
+    async function confirmDeleteFAQ(id) {
+      const confirmed = await showConfirm("Are you sure you want to delete this FAQ?");
+      if (confirmed) {
+        const res = await fetch(`${API}/delete/${id}`, { method: 'DELETE' });
+        const result = await res.json();
+        if (!res.ok) {
+          showMessage(result.error || "An error occurred.", "error");
+        }
+        fetchFAQs();
+      }
+    }
+
+    // Use the confirmation modal for toggling status.
+    async function confirmToggleFAQ(id) {
+      const confirmed = await showConfirm("Are you sure you want to toggle the status of this FAQ?");
+      if (confirmed) {
+        const res = await fetch(`${API}/toggle/${id}`, { method: 'POST' });
+        const result = await res.json();
+        if (!res.ok) {
+          showMessage(result.error || "An error occurred.", "error");
+        }
+        fetchFAQs();
+      }
+    }
+
+    // Reset the Add/Edit form.
+    function resetForm() {
+      document.getElementById('faq-id').value = '';
+      document.getElementById('faq-form').reset();
+    }
+
+    // Load FAQs when the page is ready.
+    $(document).ready(function() {
+      fetchFAQs();
+    });
+  </script>
+</body>
+</html>

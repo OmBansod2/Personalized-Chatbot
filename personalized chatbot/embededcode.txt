@@ -1,0 +1,231 @@
+<script>
+(function(){
+  // --- CSS Styles ---
+  var css = `
+    /* Global resets */
+    * { box-sizing: border-box; }
+    body { font-family: 'Roboto', sans-serif; margin: 0; padding: 0; background: #f4f7f9; }
+    /* Floating Chat Icon */
+    .chat-icon {
+      position: fixed;
+      bottom: 20px;
+      right: 20px;
+      width: 70px;
+      height: 70px;
+      background: linear-gradient(135deg, #205295, #163e73);
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      z-index: 1000;
+      box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
+      transition: transform 0.2s ease;
+    }
+    .chat-icon:hover { transform: scale(1.05); }
+    .chat-icon i { color: #fff; font-size: 32px; }
+    /* Chat Box Container */
+    .chat-box {
+      position: fixed;
+      bottom: 100px;
+      right: 20px;
+      width: 350px;
+      max-width: 95%;
+      height: 500px;
+      background-color: #fff;
+      border-radius: 12px;
+      box-shadow: 0 8px 30px rgba(0, 0, 0, 0.35);
+      display: none;
+      flex-direction: column;
+      overflow: hidden;
+      z-index: 1000;
+      animation: fadeInUp 0.4s ease-out;
+    }
+    .chat-box.show { display: flex; }
+    @keyframes fadeInUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+    /* Chat Header with Refresh Button */
+    .chat-header {
+      background: linear-gradient(90deg, #205295, #163e73);
+      color: #fff;
+      padding: 14px 16px;
+      font-size: 18px;
+      font-weight: bold;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .chat-header .header-title { display: flex; align-items: center; }
+    .chat-header .header-title i { margin-right: 8px; font-size: 22px; }
+    .chat-header .refresh-btn {
+      cursor: pointer;
+      font-size: 20px;
+      color: #fff;
+      margin-left: 10px;
+      transition: transform 0.2s ease;
+    }
+    .chat-header .refresh-btn:hover { transform: rotate(90deg); }
+    /* Chat Messages Area */
+    .chat-messages {
+      flex: 1;
+      background: #f2f4f8;
+      padding: 12px;
+      overflow-y: auto;
+      font-size: 15px;
+      line-height: 1.5;
+      border-top: 1px solid #ddd;
+      border-bottom: 1px solid #ddd;
+    }
+    .chat-messages::-webkit-scrollbar { width: 8px; }
+    .chat-messages::-webkit-scrollbar-track {
+      background: #f1f1f1; border-radius: 4px;
+    }
+    .chat-messages::-webkit-scrollbar-thumb {
+      background: #bbb; border-radius: 4px;
+    }
+    .chat-message {
+      margin-bottom: 10px;
+      padding: 10px 14px;
+      border-radius: 16px;
+      max-width: 80%;
+      word-wrap: break-word;
+      animation: fadeIn 0.3s ease;
+      display: flex;
+      align-items: center;
+    }
+    .chat-message.user {
+      background: #205295;
+      color: #fff;
+      margin-left: auto;
+      border-bottom-right-radius: 8px;
+    }
+    .chat-message.bot {
+      background: #e0eaf4;
+      color: #333;
+      margin-right: auto;
+      border-bottom-left-radius: 8px;
+    }
+    .chat-message.bot i {
+      margin-right: 6px; color: #205295;
+    }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+    /* Chat Input Area */
+    .chat-input { display: flex; border-top: 1px solid #ddd; }
+    .chat-input textarea {
+      flex: 1; border: none; padding: 12px;
+      font-size: 15px; resize: none; outline: none;
+      border-bottom-left-radius: 12px; background: #f9f9f9;
+    }
+    .chat-input button {
+      background: #205295; color: #fff; border: none;
+      padding: 12px 18px; font-size: 15px; cursor: pointer;
+      border-bottom-right-radius: 12px; transition: background-color 0.3s ease;
+    }
+    .chat-input button:hover { background-color: #163e73; }
+  `;
+  var style = document.createElement('style');
+  style.type = 'text/css';
+  style.appendChild(document.createTextNode(css));
+  document.head.appendChild(style);
+  
+  // --- HTML Markup ---
+  var widgetHTML = `
+    <div class="chat-icon" onclick="toggleChatBox()">
+      <i class="fas fa-robot"></i>
+    </div>
+    <a href="/admin/login" style="position: fixed; top: 18px; right: 24px; z-index: 2000; color: #fff; background: #205295; padding: 8px 20px; border-radius: 8px; text-decoration: none; font-size: 16px; box-shadow: 0 2px 8px rgba(0,0,0,0.12);">Admin Login</a>
+    <div class="chat-box" id="chat-box">
+      <div class="chat-header">
+        <div class="header-title"><i class="fas fa-robot"></i> Personalized Chatbot</div>
+        <div class="refresh-btn" onclick="refreshChat()" title="Refresh Chat">
+          <i class="fas fa-sync"></i>
+        </div>
+      </div>
+      <div class="chat-messages" id="chat-messages">
+        <!-- Chat messages will appear here -->
+      </div>
+      <div class="chat-input">
+        <textarea id="chat-message" rows="1" placeholder="Type your message..."></textarea>
+        <button onclick="sendChatMessage()">Send</button>
+      </div>
+    </div>
+  `;
+  var container = document.createElement('div');
+  container.id = 'personalized-chatbot-widget';
+  container.innerHTML = widgetHTML;
+  document.body.appendChild(container);
+  
+  // --- JavaScript Functions ---
+  window.toggleChatBox = function() {
+    var chatBox = document.getElementById('chat-box');
+    chatBox.classList.toggle('show');
+  };
+  
+  window.refreshChat = function() {
+    document.getElementById('chat-messages').innerHTML = "";
+  };
+  
+  window.sendChatMessage = async function() {
+    var messageInput = document.getElementById('chat-message');
+    var messagesDiv = document.getElementById('chat-messages');
+    var message = messageInput.value.trim();
+    if (!message) return;
+    
+    // Append user's message
+    var userMessage = document.createElement('div');
+    userMessage.className = 'chat-message user';
+    userMessage.textContent = message;
+    messagesDiv.appendChild(userMessage);
+    messagesDiv.scrollTop = messagesDiv.scrollHeight;
+    
+    messageInput.value = "";
+    
+    // Append bot "thinking" message
+    var thinkingMessage = document.createElement('div');
+    thinkingMessage.className = 'chat-message bot';
+    thinkingMessage.innerHTML = `<i class="fas fa-robot"></i> 🤖 Thinking...`;
+    messagesDiv.appendChild(thinkingMessage);
+    messagesDiv.scrollTop = messagesDiv.scrollHeight;
+    
+    try {
+      var response = await fetch('/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: message })
+      });
+      var data = await response.json();
+      messagesDiv.removeChild(thinkingMessage);
+      var botMessage = document.createElement('div');
+      botMessage.className = 'chat-message bot';
+      botMessage.innerHTML = `<i class="fas fa-robot"></i> ${data.reply}`;
+      messagesDiv.appendChild(botMessage);
+      messagesDiv.scrollTop = messagesDiv.scrollHeight;
+    } catch (error) {
+      messagesDiv.removeChild(thinkingMessage);
+      var errorMessage = document.createElement('div');
+      errorMessage.className = 'chat-message bot';
+      errorMessage.innerHTML = `<i class="fas fa-exclamation-triangle"></i> ❌ Error communicating with server.`;
+      messagesDiv.appendChild(errorMessage);
+      messagesDiv.scrollTop = messagesDiv.scrollHeight;
+    }
+  };
+  
+  // Submit on Enter key (without Shift)
+  document.addEventListener('DOMContentLoaded', function(){
+    var textArea = document.getElementById('chat-message');
+    textArea.addEventListener('keydown', function(e){
+      if(e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault();
+        window.sendChatMessage();
+      }
+    });
+  });
+  
+  // Dynamically load Font Awesome script if not already loaded
+  if (!document.querySelector('link[href*="font-awesome"]')) {
+    var faScript = document.createElement('script');
+    faScript.src = "https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/js/all.min.js";
+    faScript.defer = true;
+    document.head.appendChild(faScript);
+  }
+})();
+</script>
